@@ -1,15 +1,38 @@
-FROM phusion/baseimage:0.9.19
+FROM buildpack-deps:jessie-scm
 
-# Install Dependencies
+# Work around https://github.com/dotnet/cli/issues/1582 until Docker releases a
+# fix (https://github.com/docker/docker/issues/20818). This workaround allows
+# the container to be run with the default seccomp Docker settings by avoiding
+# the restart_syscall made by LTTng which causes a failed assertion.
+ENV LTTNG_UST_REGISTER_TIMEOUT 0
+
+# Install .NET CLI dependencies
 RUN apt-get update \
-    && apt-get install -y curl gettext libunwind8 libcurl4-openssl-dev libicu-dev libssl-dev
+    && apt-get install -y --no-install-recommends \
+        libc6 \
+        libcurl3 \
+        libgcc1 \
+        libgssapi-krb5-2 \
+        libicu52 \
+        liblttng-ust0 \
+        libssl1.0.0 \
+        libstdc++6 \
+        libunwind8 \
+        libuuid1 \
+        zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install .NET Core
-RUN mkdir -p /opt/dotnet \
-    && curl -Lsfo /opt/dotnet/dotnet-install.sh https://raw.githubusercontent.com/dotnet/cli/rel/1.0.0/scripts/obtain/dotnet-install.sh \
-    && bash /opt/dotnet/dotnet-install.sh --version 1.0.0-preview3-003223 --install-dir /opt/dotnet \
-    && ln -s /opt/dotnet/dotnet /usr/local/bin
+# Install .NET Core SDK
+ENV DOTNET_SDK_VERSION 1.0.0-preview2-003121
+ENV DOTNET_SDK_DOWNLOAD_URL https://dotnetcli.blob.core.windows.net/dotnet/preview/Binaries/$DOTNET_SDK_VERSION/dotnet-dev-debian-x64.$DOTNET_SDK_VERSION.tar.gz
 
+RUN curl -SL $DOTNET_SDK_DOWNLOAD_URL --output dotnet.tar.gz \
+    && mkdir -p /usr/share/dotnet \
+    && tar -zxf dotnet.tar.gz -C /usr/share/dotnet \
+    && rm dotnet.tar.gz \
+    && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+
+ENV NUGET_XMLDOC_MODE skip
 
 # Display info installed components
 RUN dotnet --info
@@ -25,9 +48,11 @@ RUN mkdir hwapp \
 
 # Add Cake
 ADD caketools /opt/caketools
+ADD cake /usr/bin/cake
+RUN chmod 755 /usr/bin/cake
 
 # Display Cake Version
-RUN cd /opt/caketools/Cake && dotnet Cake.dll --version
+RUN cd /opt/caketools;cake --version
 
 # Clean up
 RUN apt-get clean
